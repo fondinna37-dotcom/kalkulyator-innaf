@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Калькулятор бухгалтерских услуг</title>
+
+  <!-- НАСТРОЙКИ. Чтобы изменить цену, замените число после price. Цены указаны в рублях. -->
+  <script>
+    const settings = {
+      urgentPercent: 30,
+      volumePercent: 5,
+      volumeMinimum: 3,
+      packagePercent: 10,
+      packageMonths: 6,
+      vatPercent: 22
+    };
+
+    const services = [
+      { name: 'Бухгалтерия ИП на УСН без сотрудников', unit: 'месяц', price: 5500, monthly: true, details: 'первичка, налоги, декларация, ответы на требования' },
+      { name: 'Бухгалтерия ООО на УСН', unit: 'месяц', price: 14000, monthly: true, details: 'до 50 операций в месяц, отчётность, сверки с контрагентами' },
+      { name: 'Зарплата и кадры', unit: 'сотрудник в месяц', price: 900, monthly: true, details: 'расчёт зарплаты, отпускные, больничные, отчёты в СФР' },
+      { name: 'Декларация 3-НДФЛ', unit: 'документ', price: 3500, details: 'вычет за квартиру, лечение или обучение, подача через личный кабинет' },
+      { name: 'Восстановление учёта', unit: 'месяц учёта', price: 7000, details: 'разбор выписок и первички, исправление ошибок, сверка с налоговой' },
+      { name: 'Управленческая отчётность', unit: 'месяц', price: 12000, monthly: true, details: 'ОПиУ, ДДС и баланс в таблице, комментарий к цифрам' },
+      { name: 'Платёжный календарь', unit: 'месяц', price: 6000, monthly: true, details: 'план поступлений и платежей по неделям, контроль кассовых разрывов' },
+      { name: 'Консультация финансиста', unit: 'час', price: 4000, step: 0.25, details: 'онлайн-встреча, разбор вопроса, письменные выводы после встречи' }
+    ];
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      font: 100%/1.5 system-ui, -apple-system, sans-serif;
+      color: #332625;
+      background: #f8f2e9;
+      --burgundy: #631f33;
+      --burgundy-dark: #461426;
+      --gold: #d3ab73;
+      --muted: #69534b;
+      --line: #e6d7c9;
+      --field-border: #bda697;
+      --paper: #fffdfa;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; }
+    [hidden] { display: none !important; }
+    .shell {
+      width: min(100% - 1.5rem, 69rem);
+      margin-inline: auto;
+    }
+
+    .hero {
+      padding: clamp(2rem, 5vw, 4rem) 0 clamp(2.7rem, 6vw, 5rem);
+      color: #fff9f0;
+      background: linear-gradient(115deg, var(--burgundy-dark), var(--burgundy));
+      border-bottom: 1px solid var(--gold);
+    }
+    .hero h1 {
+      max-width: 22ch;
+      margin: 0;
+      font-family: Georgia, serif;
+      font-size: clamp(1.8rem, 5vw, 3.55rem);
+      font-weight: 500;
+      line-height: 1.12;
+      letter-spacing: -.025em;
+    }
+    .hero p { margin: .65rem 0 0; color: #f2d8c6; }
+
+    main.shell {
+      margin-top: -1.25rem;
+      padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+    }
+    form, .summary { min-width: 0; }
+    .panel {
+      padding: clamp(.85rem, 2.2vw, 1.45rem);
+      margin-bottom: .85rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      box-shadow: 0 5px 18px #5333260d;
+    }
+    h2 {
+      margin: 0 0 .85rem;
+      color: var(--burgundy-dark);
+      font-size: 1.25rem;
+      line-height: 1.25;
+    }
+
+    .service { border: 1px solid var(--line); border-radius: .75rem; }
+    .service + .service { margin-top: .55rem; }
+    .service:has(input:checked) { background: #fbf0ed; border-color: #bd8390; }
+    .choice {
+      display: flex;
+      align-items: flex-start;
+      gap: .65rem;
+      min-height: 2.75rem;
+      cursor: pointer;
+    }
+    .service .choice { padding: .7rem; }
+    .choice > span { min-width: 0; overflow-wrap: anywhere; }
+    input[type=checkbox] {
+      margin: .17rem 0 0;
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: none;
+      accent-color: var(--burgundy);
+    }
+    .service-name { display: block; font-weight: 680; line-height: 1.35; }
+    .details, .hint {
+      display: block;
+      color: var(--muted);
+      font-size: .875rem;
+      line-height: 1.45;
+      margin-top: .25rem;
+    }
+    .price { display: block; color: var(--burgundy); margin-top: .35rem; font-weight: 680; }
+    .quantity-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .5rem;
+      padding: 0 .7rem .7rem;
+      margin-left: 1.9rem;
+      font-size: .9rem;
+    }
+    .quantity-row > :first-child { flex-basis: 100%; }
+    .quantity-row .unit { overflow-wrap: anywhere; }
+    input:not([type=checkbox]), select, textarea {
+      width: 100%;
+      min-height: 2.85rem;
+      padding: .55rem .7rem;
+      border: 1px solid var(--field-border);
+      border-radius: .6rem;
+      background-color: #fff;
+      color: inherit;
+      font: inherit;
+      font-size: 1rem;
+    }
+    input[type=number] { width: 6rem; max-width: 100%; }
+    input:disabled { color: #5f4a43; background: #f3eae3; opacity: 1; }
+    select {
+      appearance: none;
+      padding-right: 2.25rem;
+      background-image: linear-gradient(45deg, transparent 50%, var(--burgundy) 50%),
+        linear-gradient(135deg, var(--burgundy) 50%, transparent 50%);
+      background-position: right 1.15rem center, right .85rem center;
+      background-size: .3rem .3rem;
+      background-repeat: no-repeat;
+    }
+    :focus-visible { outline: 3px solid #96652e; outline-offset: 2px; }
+    .field { display: grid; min-width: 0; gap: .35rem; }
+    .options-grid { display: grid; gap: .75rem; }
+    .options .choice { margin-top: .85rem; align-items: center; }
+    .options .choice input { margin-top: 0; }
+    .options .hint { margin-left: 1.9rem; }
+
+    .summary { align-self: start; border-top: 3px solid var(--gold); }
+    .breakdown { margin: 0; padding: 0; list-style: none; }
+    .line {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: .6rem;
+      padding: .55rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .line > :first-child { min-width: 0; overflow-wrap: anywhere; }
+    .line > :last-child, output {
+      flex: 0 1 auto;
+      min-width: 0;
+      text-align: right;
+      overflow-wrap: anywhere;
+      font-variant-numeric: tabular-nums;
+    }
+    .line small { display: block; color: var(--muted); margin-top: .2rem; font-size: .85rem; }
+    .grand {
+      margin-top: .65rem;
+      padding: .75rem;
+      border: 0;
+      border-radius: .65rem;
+      color: var(--burgundy-dark);
+      background: #f4e6df;
+      font-size: clamp(1.2rem, 3vw, 1.55rem);
+      font-weight: 750;
+    }
+    .actions { display: grid; gap: .5rem; margin-top: .85rem; }
+    button {
+      min-height: 2.85rem;
+      max-width: 100%;
+      padding: .55rem .7rem;
+      border-radius: .65rem;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .primary { background: var(--burgundy); color: white; border: 1px solid var(--burgundy); }
+    .secondary { background: #fff; color: var(--burgundy-dark); border: 1px solid var(--field-border); }
+    .primary:hover:not(:disabled) { background: var(--burgundy-dark); }
+    .secondary:hover:not(:disabled) { background: #fbf0ed; }
+    button:disabled { opacity: .5; cursor: default; }
+    .mobile-total {
+      position: fixed;
+      z-index: 2;
+      inset: auto 0 0;
+      background: var(--burgundy-dark);
+      color: #fff9f0;
+      border-top: 2px solid var(--gold);
+      padding: .25rem 0 calc(.25rem + env(safe-area-inset-bottom));
+    }
+    .mobile-total a {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: .6rem;
+      min-height: 2.85rem;
+      color: inherit;
+      text-decoration: none;
+    }
+    .mobile-total a span { text-decoration: underline; text-underline-offset: .2em; }
+    .mobile-total output { font-weight: 750; font-size: 1.2rem; }
+    .error { color: #9a2319; }
+    .print-only { display: none; }
+    dialog {
+      width: min(30rem, calc(100% - 2rem));
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      padding: 1rem;
+      color: inherit;
+      background: var(--paper);
+    }
+    dialog::backdrop { background: #311b22a0; }
+    dialog textarea { min-height: 13rem; margin: .5rem 0; }
+
+    @media (min-width: 54rem) {
+      .shell { width: min(100% - 3rem, 69rem); }
+      main.shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+        gap: 1.25rem;
+        padding-bottom: 2rem;
+      }
+      .summary {
+        position: sticky;
+        top: 1rem;
+        max-height: calc(100vh - 2rem);
+        display: flex;
+        flex-direction: column;
+      }
+      .summary-body { min-height: 0; overflow: auto; }
+      .mobile-total { display: none; }
+      .options-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media print {
+      @page { size: A4; margin: 16mm; }
+      body { background: white; color: black; }
+      .hero, #calculator, .mobile-total, .actions, #copy-dialog { display: none !important; }
+      main.shell { display: block; width: 100%; margin: 0; padding: 0; }
+      .summary {
+        display: block;
+        position: static;
+        max-height: none;
+        border: 0;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+      }
+      h2, .grand { color: black; }
+      .grand { background: white; }
+      .summary-body { overflow: visible; }
+      .line { break-inside: avoid; }
+      .print-only { display: block; margin: 0 0 .5rem; }
+    }
+
+    :root { color:#332723; background:#f7f1e7; --paper:#fffdf8; --burgundy:#643b3c; --burgundy-dark:#50302f; --gold:#b19361; --muted:#695950; --line:#e1d5c4; --field-border:#b9a796; }
+    html { scroll-padding-bottom:calc(4.5rem + env(safe-area-inset-bottom)); }
+    .hero { color:var(--burgundy-dark); background:#f0e7d7; }
+    .hero p { color:var(--muted); }
+    .panel { box-shadow:none; }
+    .service { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,auto); align-items:start; }
+    .service:has(input:checked) { background:#f6f0e4; border-color:#bea882; }
+    .service .choice { grid-column:1 / -1; }
+    .service:has(.service-total:not([hidden])) .choice { grid-column:1; }
+    .service-total { grid-column:2; grid-row:1; margin:.7rem .65rem 0 0; max-width:7rem; font-weight:750; color:var(--burgundy-dark); }
+    .quantity-row { grid-column:1 / -1; }
+    .grand { margin:0 0 .5rem; background:#f1e8d9; align-items:center; }
+    .grand output { font-size:clamp(1.3rem, 4vw, 2rem); }
+    .result-data .line { padding:.36rem 0; font-size:.9rem; }
+    .disclosure { margin-top:.45rem; }
+    .disclosure summary { cursor:pointer; color:var(--burgundy-dark); font-weight:650; padding:.65rem 0; min-height:44px; }
+    .secondary:hover:not(:disabled) { background:#f5eddf; }
+    .mobile-total { color:var(--burgundy-dark); background:#fffdf8; padding:0 0 env(safe-area-inset-bottom); border-top:1px solid var(--gold); box-shadow:0 -3px 14px #4c372611; }
+    .mobile-total output { font-size:1.05rem; }
+    .mobile-total a { min-height:44px; }
+    @media (max-width:26rem) {
+      .service .choice { gap:.45rem; padding:.58rem; }
+      .service-total { margin:.6rem .5rem 0 0; max-width:5rem; font-size:.88rem; }
+      .service-name, .details, .price { overflow-wrap:normal; }
+      .quantity-row { margin-left:.65rem; }
+    }
+    @media print {
+      :root { background:white; }
+      .summary { display:flex; flex-direction:column; }
+      .grand { order:1; margin-top:.65rem; border-top:1px solid #aaa; }
+      .result-data { display:flex; flex-direction:column; }
+      .disclosure { order:-1; }
+      .disclosure summary { display:none; }
+      .disclosure::details-content { content-visibility:visible; display:block; }
+    }    :root { background:#eee6d8; }
+    .hero { padding:1.65rem 0 2rem; background:transparent; border:0; }
+    .hero .shell { border-top:3px double var(--burgundy); border-bottom:1px solid var(--gold); padding:.85rem 0 1rem; }
+    .hero h1 { max-width:19ch; font-size:clamp(1.85rem,5vw,3.7rem); }
+    main.shell { margin-top:0; }
+    .panel { border-radius:.28rem; }
+    h2 { font:600 1.45rem Georgia,serif; }
+    .service { border:0; border-bottom:1px solid var(--line); border-radius:0; }
+    .service + .service { margin-top:0; }
+    .summary { border-top:4px double var(--burgundy); box-shadow:3px 3px 0 #d9cbb5, 6px 6px 0 #e4d8c5; }
+    .summary h2 { padding-bottom:.6rem; border-bottom:1px solid var(--gold); }
+    .grand { border-radius:0; background:#efe4d0; }
+    .grand output { font-family:Georgia,serif; }
+    @media (min-width:54rem) {
+      .hero .shell { display:grid; grid-template-columns:1fr 17rem; align-items:end; gap:1.5rem; }
+      .hero p { text-align:right; padding-bottom:.1rem; }
+      main.shell { grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:1.6rem; }
+      .summary { margin-right:6px; }
+      .summary .actions { grid-template-columns:1fr 1fr; align-items:stretch; }
+      .summary #copy-status { grid-column:1 / -1; }
+    }
+    @media print {
+      .summary { box-shadow:none; border:0; margin:0; }
+      .summary h2 { border:0; padding:0; }
+      .grand { background:white; }
+    }
+
+    h2::after { content:''; display:block; width:2rem; height:1px; background:var(--gold); margin-top:.45rem; }
+    .summary h2 { border-bottom:0; padding-bottom:0; }
+    .grand { border-left:2px solid var(--gold); }
+    .grand output { font-family:inherit; }
+    .duration { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.3rem; width:min(100%,23rem); }
+    .duration output { text-align:center; font-weight:650; }
+    .duration button { color:var(--burgundy-dark); border:1px solid var(--field-border); background:var(--paper); font-size:.875rem; padding-inline:.4rem; white-space:nowrap; }
+    .duration button:disabled { opacity:.55; }
+    .primary { background:#694143; }
+    .summary { scroll-margin-top:.75rem; }
+    @media (prefers-reduced-motion:no-preference) { html { scroll-behavior:smooth; } }
+    @media (min-width:54rem) {
+      main.shell { grid-template-columns:minmax(0,65fr) minmax(0,35fr); }
+      .summary .actions { grid-template-columns:1fr; }
+      .summary > :not(.summary-body) { flex-shrink:0; }
+    }
+    @media (min-width:54rem) and (max-height:28rem) {
+      .summary { overflow:auto; }
+      .summary-body { flex-shrink:0; overflow:visible; }
+    }
+    @media (max-width:53.999rem) {
+      main.shell { padding-bottom:calc(5.5rem + env(safe-area-inset-bottom)); }
+    }
+    @media print {
+      h2::after { display:none; }
+      .summary { overflow:visible; }
+      .summary-body { flex-shrink:0; }
+      .grand { border-left:0; }
+    }
+
+    .hero .usage {
+      width:min(100% - 1.5rem,69rem); margin:.7rem auto 0; padding:.1rem .75rem;
+      background:#f8f2e7; border-inline-start:2px solid var(--gold);
+    }
+    .usage summary { cursor:pointer; min-height:2.75rem; padding:.65rem 0; font-size:.9rem; font-weight:650; }
+    .usage ol { margin:0 0 .65rem; padding-inline-start:1.35rem; font-size:.875rem; }
+    .usage li + li { margin-top:.2rem; }
+    .payroll-months { flex-basis:100%; display:grid; justify-items:start; gap:.35rem; }
+    .estimate-note { margin:.25rem 0 0; overflow-wrap:anywhere; }
+    @media (min-width:54rem) { .hero .usage { width:min(100% - 3rem,69rem); } }
+    @media (min-width:54rem) and (max-height:36rem) and (min-height:28.001rem) {
+      .summary { overflow:auto; }
+      .summary-body { flex-shrink:0; overflow:visible; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="shell">
+      <h1>Калькулятор бухгалтерских услуг</h1>
+      <p>Предварительный расчёт стоимости</p>
+    </div>
+    <details class="usage">
+      <summary>Как пользоваться калькулятором</summary>
+      <ol>
+        <li>Выберите необходимые услуги.</li>
+        <li>Укажите количество сотрудников, месяцев или продолжительность консультации.</li>
+        <li>При необходимости настройте срочность, предоплату и НДС.</li>
+        <li>Посмотрите стоимость и подробную расшифровку. При необходимости скопируйте расчёт или сохраните PDF.</li>
+      </ol>
+    </details>
+  </header>
+  <main class="shell">
+    <form id="calculator">
+      <section class="panel" aria-labelledby="services-title">
+        <h2 id="services-title">Услуги</h2>
+        <div id="service-list"></div>
+      </section>
+      <section class="panel options" aria-labelledby="options-title">
+        <h2 id="options-title">Условия расчёта</h2>
+        <div class="options-grid">
+          <label class="field">Срочность
+            <select id="urgency"><option value="usual">Обычный срок</option><option value="urgent"></option></select>
+          </label>
+          <label class="field">НДС
+            <select id="vat"><option value="none">Без НДС</option><option value="added"></option></select>
+          </label>
+        </div>
+        <label class="choice"><input type="checkbox" id="package" aria-describedby="package-hint"><span id="package-label"></span></label>
+        <p class="hint" id="package-hint"></p>
+        <p class="hint" id="volume-hint"></p>
+      </section>
+      <section class="panel">
+        <label class="field">Как к вам обращаться
+          <input id="client" type="text" autocomplete="name" placeholder="Ваше имя" maxlength="120">
+        </label>
+      </section>
+    </form>
+    <section class="panel summary" id="summary" tabindex="-1" aria-labelledby="summary-title">
+      <h2 id="summary-title">Ваш расчёт</h2>
+      <div class="line grand"><span>Итого</span><output id="total" aria-live="polite">0 ₽</output></div>
+      <div class="summary-body">
+        <p id="print-client" class="print-only" hidden></p>
+        <p id="empty" class="hint">Выберите услуги, чтобы увидеть расчёт.</p>
+        <p id="invalid" class="hint error" role="status" hidden>Проверьте количество каждой выбранной услуги.</p>
+        <div class="result-data" hidden>
+          <ul id="totals" class="breakdown" aria-label="Сводка расчёта"></ul>
+          <details class="disclosure">
+            <summary>Подробная расшифровка</summary>
+            <ul id="breakdown" class="breakdown"></ul>
+          </details>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="copy" type="button" disabled>Скопировать расчёт</button>
+        <button class="secondary" id="print" type="button" disabled>Распечатать или сохранить PDF</button>
+        <span class="hint" id="copy-status" role="status" hidden></span>
+        <p class="hint estimate-note">Расчёт является предварительным. Окончательная стоимость определяется после уточнения объёма работ и особенностей бухгалтерского учёта.</p>
+      </div>
+    </section>
+  </main>
+  <div class="mobile-total">
+    <div class="shell"><a href="#summary"><span>К расчёту</span><output id="mobile-total" aria-live="off">0 ₽</output></a></div>
+  </div>
+  <dialog id="copy-dialog">
+    <label class="field">Выделите и скопируйте расчёт
+      <textarea id="copy-text" readonly></textarea>
+    </label>
+    <form method="dialog"><button class="secondary">Закрыть</button></form>
+  </dialog>
+
+  <template id="service-template">
+    <div class="service">
+      <label class="choice">
+        <input type="checkbox">
+        <span>
+          <span class="service-name"></span>
+          <span class="details"></span>
+          <span class="price"></span>
+        </span>
+      </label>
+      <output class="service-total" aria-label="Стоимость выбранного объёма" aria-live="off" hidden></output>
+      <div class="quantity-row" hidden>
+        <label class="quantity-label"></label>
+        <input type="number" inputmode="numeric" required disabled>
+        <span class="unit"></span>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    const byId = id => document.getElementById(id);
+    const moneyFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+    const money = kopecks => moneyFormat.format(kopecks / 100) + '\u00a0₽';
+    function duration(hours) {
+      const wholeHours = Math.floor(hours);
+      const minutes = Math.round((hours - wholeHours) * 60);
+      const form = new Intl.PluralRules('ru-RU').select(wholeHours);
+      const hourWord = { one: 'час', few: 'часа', many: 'часов' }[form] || 'часа';
+      return [wholeHours ? wholeHours + ' ' + hourWord : '', minutes ? minutes + ' минут' : '']
+        .filter(Boolean).join(' ');
+    }
+
+    const percentOf = (kopecks, percent) => Math.round(kopecks * percent / 100);
+
+    function calculate(items, prepaid, urgent, withVat) {
+      const lines = items.map(item => ({
+        ...item,
+        months: prepaid && item.monthly ? settings.packageMonths : 1,
+        subtotal: Math.round(item.price * item.quantity * (prepaid && item.monthly ? settings.packageMonths : 1) * 100)
+      }));
+      const subtotal = lines.reduce((sum, line) => sum + line.subtotal, 0);
+      const volumeRate = lines.length >= settings.volumeMinimum ? settings.volumePercent : 0;
+      const packageRate = prepaid ? settings.packagePercent : 0;
+      const monthlySubtotal = lines.reduce((sum, line) => sum + (line.monthly ? line.subtotal : 0), 0);
+      const volumeDiscount = percentOf(subtotal, volumeRate);
+      const packageAmount = percentOf(monthlySubtotal, packageRate);
+      const packageDiscount = packageAmount > 0 && packageAmount >= volumeDiscount;
+      const discountRate = packageDiscount ? packageRate : volumeRate;
+      const discount = packageDiscount ? packageAmount : volumeDiscount;
+      const afterDiscount = subtotal - discount;
+      const surcharge = urgent ? percentOf(afterDiscount, settings.urgentPercent) : 0;
+      const beforeVat = afterDiscount + surcharge;
+      const vat = withVat ? percentOf(beforeVat, settings.vatPercent) : 0;
+      return { lines, subtotal, discountRate, discount, surcharge, vat, total: beforeVat + vat,
+        packageDiscount };
+    }
+
+    const form = byId('calculator');
+    const urgency = byId('urgency');
+    const vatChoice = byId('vat');
+    const prepaid = byId('package');
+    const copy = byId('copy');
+    const print = byId('print');
+    const status = byId('copy-status');
+    const breakdown = byId('breakdown');
+    const totals = byId('totals');
+    const disclosure = breakdown.closest('details');
+    const resultData = totals.parentElement;
+    let message = '';
+    let disclosureWasOpen;
+
+    urgency.options[1].textContent = 'Срочно, +' + settings.urgentPercent + '%';
+    vatChoice.options[1].textContent = 'НДС ' + settings.vatPercent + '% сверху';
+    byId('package-label').textContent = 'Оплата сразу за ' + settings.packageMonths + ' месяцев, скидка ' + settings.packagePercent + '%';
+    byId('package-hint').textContent = 'Регулярные услуги рассчитываются за ' + settings.packageMonths + ' месяцев. Скидка за пакет действует только на них.';
+    byId('volume-hint').textContent = 'От ' + settings.volumeMinimum + ' разных услуг действует скидка ' + settings.volumePercent + '%. Применяется скидка, которая даёт бо́льшую экономию в рублях.';
+
+    const controls = services.map((service, index) => {
+      const row = byId('service-template').content.firstElementChild.cloneNode(true);
+      const checkbox = row.querySelector('input[type=checkbox]');
+      const quantity = row.querySelector('input[type=number]');
+      const quantityRow = row.querySelector('.quantity-row');
+      row.querySelector('.service-name').textContent = service.name;
+      row.querySelector('.details').textContent = service.details;
+      row.querySelector('.price').textContent = money(Math.round(service.price * 100)) + ' / ' + service.unit;
+      row.querySelector('.unit').textContent = service.unit;
+      quantity.step = service.step || 1;
+      quantity.min = quantity.step;
+      quantity.value = '1';
+      const label = quantityRow.querySelector('.quantity-label');
+      const labels = {
+        'месяц': 'Количество месяцев',
+        'сотрудник в месяц': 'Количество сотрудников',
+        'месяц учёта': 'Количество месяцев учёта',
+        'документ': 'Количество деклараций'
+      };
+      quantity.id = 'quantity-' + index;
+      label.htmlFor = quantity.id;
+      label.textContent = labels[service.unit] || service.unit;
+      let payrollMonths = null;
+      if (service.unit === 'сотрудник в месяц') {
+        const monthsLabel = document.createElement('label');
+        monthsLabel.className = 'payroll-months';
+        monthsLabel.textContent = 'Количество месяцев';
+        payrollMonths = document.createElement('input');
+        payrollMonths.type = 'number';
+        payrollMonths.inputMode = 'numeric';
+        payrollMonths.min = payrollMonths.step = payrollMonths.value = '1';
+        payrollMonths.required = true;
+        monthsLabel.append(payrollMonths);
+        quantityRow.append(monthsLabel);
+      }
+      quantity.dataset.quantity = quantity.value;
+      quantity.addEventListener('input', () => { quantity.dataset.quantity = quantity.value; });
+      if (service.step) {
+        quantity.hidden = true;
+        quantityRow.querySelector('.unit').hidden = true;
+        label.textContent = 'Продолжительность';
+        label.removeAttribute('for');
+        const stepper = document.createElement('div');
+        stepper.className = 'duration';
+        stepper.setAttribute('role', 'group');
+        stepper.setAttribute('aria-label', 'Продолжительность консультации');
+        const decrease = document.createElement('button');
+        const increase = document.createElement('button');
+        const display = document.createElement('output');
+        decrease.type = increase.type = 'button';
+        decrease.textContent = '−15 мин';
+        increase.textContent = '+15 мин';
+        decrease.setAttribute('aria-label', 'Уменьшить на 15 минут');
+        increase.setAttribute('aria-label', 'Увеличить на 15 минут');
+        function updateDuration() {
+          display.value = duration(quantity.valueAsNumber);
+          decrease.disabled = quantity.valueAsNumber <= service.step;
+        }
+        for (const [button, delta] of [[decrease, -1], [increase, 1]]) {
+          button.addEventListener('click', () => {
+            quantity.value = Math.max(service.step, quantity.valueAsNumber + delta * service.step);
+            updateDuration();
+            quantity.dispatchEvent(new Event('input', { bubbles: true }));
+          });
+        }
+        stepper.append(decrease, display, increase);
+        quantityRow.append(stepper);
+        updateDuration();
+      }
+      byId('service-list').append(row);
+      return { service, checkbox, quantity, quantityRow, payrollMonths, unit: row.querySelector('.unit'), amount: row.querySelector('.service-total') };
+    });
+
+    function addLine(label, amount, detail = '', list = breakdown) {
+      const row = document.createElement('li');
+      row.className = 'line';
+      const title = document.createElement('span');
+      title.textContent = label;
+      if (detail) {
+        const small = document.createElement('small');
+        small.textContent = detail;
+        title.append(small);
+      }
+      const value = document.createElement('strong');
+      value.textContent = amount;
+      row.append(title, value);
+      list.append(row);
+      return label + (detail ? ' (' + detail + ')' : '') + ' — ' + amount;
+    }
+
+    function render() {
+      const selected = controls.filter(({ checkbox }) => checkbox.checked);
+      for (const { service, checkbox, quantity, quantityRow, payrollMonths, unit } of controls) {
+        const fixedMonths = prepaid.checked && service.monthly && service.unit === 'месяц';
+        quantity.disabled = !checkbox.checked || fixedMonths;
+        quantityRow.hidden = !checkbox.checked;
+        if (fixedMonths) {
+          quantity.value = settings.packageMonths;
+        } else if (quantity.dataset.fixed === 'true') {
+          quantity.value = quantity.dataset.quantity;
+        }
+        quantity.dataset.fixed = String(fixedMonths);
+        if (payrollMonths) {
+          const fixed = prepaid.checked;
+          if (fixed && payrollMonths.dataset.fixed !== 'true') payrollMonths.dataset.previous = payrollMonths.value;
+          if (!fixed && payrollMonths.dataset.fixed === 'true') payrollMonths.value = payrollMonths.dataset.previous;
+          if (fixed) payrollMonths.value = settings.packageMonths;
+          payrollMonths.dataset.fixed = String(fixed);
+          payrollMonths.disabled = !checkbox.checked || fixed;
+          unit.textContent = 'сотрудников';
+        }
+      }
+      const invalid = selected.some(({ quantity, payrollMonths }) =>
+        !quantity.validity.valid || (payrollMonths && !payrollMonths.validity.valid));
+      const urgent = urgency.value === 'urgent';
+      const withVat = vatChoice.value === 'added';
+      const client = byId('client').value.trim();
+      const result = calculate(selected.map(({ service, quantity, payrollMonths }) => ({
+        ...service,
+        employees: payrollMonths ? quantity.valueAsNumber : undefined,
+        payrollMonths: payrollMonths ? payrollMonths.valueAsNumber : undefined,
+        quantity: payrollMonths
+          ? quantity.valueAsNumber * (prepaid.checked ? 1 : payrollMonths.valueAsNumber)
+          : prepaid.checked && service.monthly && service.unit === 'месяц' ? 1 : quantity.valueAsNumber
+      })), prepaid.checked, urgent, withVat);
+      const subtotals = new Map(result.lines.map(line => [line.name, line.subtotal]));
+      for (const { service, checkbox, quantity, payrollMonths, amount } of controls) {
+        amount.hidden = !checkbox.checked;
+        amount.value = checkbox.checked && quantity.validity.valid && (!payrollMonths || payrollMonths.validity.valid) ? money(subtotals.get(service.name)) : '—';
+      }
+      const totalText = invalid ? 'Уточните количество' : money(result.total);
+      for (const id of ['total', 'mobile-total']) {
+        const output = byId(id);
+        if (output.value !== totalText) output.value = totalText;
+      }
+      byId('print-client').textContent = 'Для клиента: ' + client;
+      byId('print-client').hidden = !client;
+      byId('empty').hidden = selected.length > 0;
+      byId('invalid').hidden = !invalid;
+      status.hidden = true;
+      breakdown.replaceChildren();
+      totals.replaceChildren();
+      copy.disabled = print.disabled = !selected.length || invalid;
+      message = '';
+      resultData.hidden = copy.disabled;
+      if (copy.disabled) return;
+
+      const text = ['Расчёт стоимости услуг'];
+      if (client) text.push('Для клиента: ' + client);
+      text.push('');
+      for (const line of result.lines) {
+        let detail = moneyFormat.format(line.quantity) + ' × ' + money(Math.round(line.price * 100)) + ' / ' + line.unit;
+        if (line.step) {
+          detail = duration(line.quantity) + ' × ' + money(Math.round(line.price * 100)) + ' / ' + line.unit;
+        }
+        if (line.months > 1) {
+          const monthlyPrice = money(Math.round(line.price * 100));
+          detail = line.unit === 'месяц'
+            ? line.months + ' мес. × ' + monthlyPrice + ' / мес.'
+            : moneyFormat.format(line.quantity) + ' × ' + line.months + ' мес. × ' + monthlyPrice + ' / ' + line.unit;
+        }
+        if (line.employees !== undefined) {
+          detail = moneyFormat.format(line.employees) + ' × ' + moneyFormat.format(line.payrollMonths) +
+            ' мес. × ' + money(Math.round(line.price * 100)) + ' / ' + line.unit;
+        }
+        text.push(addLine(line.name, money(line.subtotal), detail));
+      }
+      const discountLabel = result.discountRate
+        ? 'Скидка ' + result.discountRate + '%' + (result.packageDiscount ? ' за пакет' : ' за объём')
+        : 'Скидка';
+      text.push('', addLine('Сумма услуг', money(result.subtotal), '', totals),
+        addLine(discountLabel, (result.discount ? '−' : '') + money(result.discount), '', totals),
+        addLine(urgent ? 'Срочность +' + settings.urgentPercent + '%' : 'Срочность', money(result.surcharge), '', totals),
+        addLine(withVat ? 'НДС ' + settings.vatPercent + '%' : 'Без НДС', money(result.vat), '', totals),
+        '', 'Итого — ' + totalText);
+      message = text.join('\n');
+    }
+
+    form.addEventListener('input', render);
+    form.addEventListener('submit', event => event.preventDefault());
+    copy.addEventListener('click', async () => {
+      const copyText = byId('copy-text');
+      copyText.value = message;
+      try {
+        await navigator.clipboard.writeText(message);
+      } catch {
+        const dialog = byId('copy-dialog');
+        dialog.showModal();
+        copyText.select();
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch {}
+        if (!copied) return;
+        dialog.close();
+      }
+      status.textContent = 'Расчёт скопирован.';
+      status.hidden = false;
+    });
+    window.addEventListener('beforeprint', () => {
+      if (disclosureWasOpen === undefined) disclosureWasOpen = disclosure.open;
+      disclosure.open = true;
+    });
+    window.addEventListener('afterprint', () => {
+      if (disclosureWasOpen === undefined) return;
+      disclosure.open = disclosureWasOpen;
+      disclosureWasOpen = undefined;
+    });
+    print.addEventListener('click', () => window.print());
+    render();
+  </script>
+</body>
+</html>
